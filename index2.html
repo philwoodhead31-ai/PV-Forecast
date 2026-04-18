@@ -24,7 +24,7 @@
       <div id="dateLine" class="date-line mt-2"></div>
     </div>
 
-    <div id="loading" class="text-center py-12 text-2xl text-gray-600">Loading 4 calls (Met Office + ICON-D2 for Front and Back)…</div>
+    <div id="loading" class="text-center py-12 text-2xl text-gray-600">Loading 2 calls (Met Office for Front and Back)…</div>
 
     <div id="results" class="hidden">
       <!-- Today -->
@@ -50,23 +50,6 @@
   </div>
 
   <script>
-    // ================== EDIT THESE CONSTANTS ==================
-    const LAT = 52.9;
-    const LON = -1.29;
-
-    // Front array (tilt 26°, azimuth 44°)
-    const KWP_FRONT = 4.7;
-    const TILT_FRONT = 26;
-    const AZ_FRONT = 44;
-
-    // Back array (tilt 26°, azimuth -136°)
-    const KWP_BACK = 4.7;
-    const TILT_BACK = 26;
-    const AZ_BACK = -136;
-
-    const TEMP_COEFF = -0.35;   // % per °C
-    // =========================================================
-
     let todayChartInst = null, tomChartInst = null;
 
     function updateTitle() {
@@ -77,44 +60,22 @@
     }
 
     async function loadForecast() {
-      const baseParams = `latitude=${LAT}&longitude=${LON}&hourly=global_tilted_irradiance,temperature_2m&timezone=auto&past_hours=12&forecast_hours=48`;
-
-      let times = [], temp = [];
-      let gti_met_front = [], gti_icon_front = [];
-      let gti_met_back = [], gti_icon_back = [];
-
       try {
-        // 1. Front - Met Office
-        document.getElementById('loading').textContent = "Loading Front Met Office…";
-        let res = await fetch(`https://api.open-meteo.com/v1/forecast?${baseParams}&tilt=${TILT_FRONT}&azimuth=${AZ_FRONT}&models=ukmo_uk_deterministic_2km`);
+        // Front - Met Office only
+        document.getElementById('loading').textContent = "Loading Met Office for Front…";
+        let res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=52.9&longitude=-1.29&hourly=global_tilted_irradiance,temperature_2m&timezone=auto&past_hours=12&forecast_hours=48&tilt=26&azimuth=44&models=ukmo_uk_deterministic_2km`);
         let data = await res.json();
-        times = data.hourly.time;
-        temp = data.hourly.temperature_2m || [];
-        gti_met_front = data.hourly.global_tilted_irradiance || [];
+        const times = data.hourly.time;
+        const temp = data.hourly.temperature_2m || [];
+        const gti_front = data.hourly.global_tilted_irradiance || [];
 
         await new Promise(r => setTimeout(r, 1000));
 
-        // 2. Front - ICON-D2
-        document.getElementById('loading').textContent = "Loading Front ICON-D2…";
-        res = await fetch(`https://api.open-meteo.com/v1/forecast?${baseParams}&tilt=${TILT_FRONT}&azimuth=${AZ_FRONT}&models=icon_d2`);
+        // Back - Met Office only
+        document.getElementById('loading').textContent = "Loading Met Office for Back…";
+        res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=52.9&longitude=-1.29&hourly=global_tilted_irradiance,temperature_2m&timezone=auto&past_hours=12&forecast_hours=48&tilt=26&azimuth=-136&models=ukmo_uk_deterministic_2km`);
         data = await res.json();
-        gti_icon_front = data.hourly.global_tilted_irradiance || [];
-
-        await new Promise(r => setTimeout(r, 1000));
-
-        // 3. Back - Met Office
-        document.getElementById('loading').textContent = "Loading Back Met Office…";
-        res = await fetch(`https://api.open-meteo.com/v1/forecast?${baseParams}&tilt=${TILT_BACK}&azimuth=${AZ_BACK}&models=ukmo_uk_deterministic_2km`);
-        data = await res.json();
-        gti_met_back = data.hourly.global_tilted_irradiance || [];
-
-        await new Promise(r => setTimeout(r, 1000));
-
-        // 4. Back - ICON-D2
-        document.getElementById('loading').textContent = "Loading Back ICON-D2…";
-        res = await fetch(`https://api.open-meteo.com/v1/forecast?${baseParams}&tilt=${TILT_BACK}&azimuth=${AZ_BACK}&models=icon_d2`);
-        data = await res.json();
-        gti_icon_back = data.hourly.global_tilted_irradiance || [];
+        const gti_back = data.hourly.global_tilted_irradiance || [];
 
         const now = new Date();
         const todayStr = now.toISOString().slice(0,10);
@@ -129,13 +90,11 @@
           const hourDate = times[i].slice(0,10);
           const hourTime = new Date(times[i]);
 
-          const valMetFront = gti_met_front[i] != null ? gti_met_front[i] : 0;
-          const valIconFront = gti_icon_front[i] != null ? gti_icon_front[i] : 0;
-          const valMetBack = gti_met_back[i] != null ? gti_met_back[i] : 0;
-          const valIconBack = gti_icon_back[i] != null ? gti_icon_back[i] : 0;
+          const valFront = gti_front[i] != null ? gti_front[i] : 0;
+          const valBack = gti_back[i] != null ? gti_back[i] : 0;
 
-          const powerFront = Math.max(0, ((valMetFront + valIconFront) / 2 / 1000) * KWP_FRONT * (1 + TEMP_COEFF / 100 * ((temp[i] || 15) - 25)));
-          const powerBack = Math.max(0, ((valMetBack + valIconBack) / 2 / 1000) * KWP_BACK * (1 + TEMP_COEFF / 100 * ((temp[i] || 15) - 25)));
+          const powerFront = Math.max(0, (valFront / 1000) * 4.7 * (1 + (-0.35) / 100 * ((temp[i] || 15) - 25)));
+          const powerBack = Math.max(0, (valBack / 1000) * 4.7 * (1 + (-0.35) / 100 * ((temp[i] || 15) - 25)));
 
           const totalPower = powerFront + powerBack;
           const hourStr = hourTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -163,7 +122,7 @@
         document.getElementById('todayTotal').innerHTML = totalToday.toFixed(1) + ' <span class="text-2xl font-medium">kWh</span>';
         document.getElementById('tomTotal').innerHTML = totalTom.toFixed(1) + ' <span class="text-2xl font-medium">kWh</span>';
 
-        // Today Chart – single combined line (Front + Back)
+        // Today Chart – single combined line
         if (todayChartInst) todayChartInst.destroy();
         todayChartInst = new Chart(document.getElementById('todayChart'), {
           type: 'line',
@@ -198,7 +157,7 @@
           }
         });
 
-        // Tomorrow Chart – single combined line (Front + Back)
+        // Tomorrow Chart – single combined line
         if (tomChartInst) tomChartInst.destroy();
         tomChartInst = new Chart(document.getElementById('tomChart'), {
           type: 'line',
