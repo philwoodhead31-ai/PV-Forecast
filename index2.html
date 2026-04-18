@@ -54,7 +54,7 @@
     function updateTitle() {
       const now = new Date();
       const options = { day: 'numeric', month: 'short' };
-      const dateStr = "Today " & now.toLocaleDateString('en-GB', options);
+      const dateStr = "Today " + now.toLocaleDateString('en-GB', options);
       document.getElementById('dateLine').textContent = dateStr;
     }
 
