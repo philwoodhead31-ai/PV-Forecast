@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PV Forecast</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-size: 1.15rem; }
+    .main-title { font-size: 2.75rem; line-height: 1.05; }
+    .date-line { font-size: 1.75rem; font-weight: 400; color: #374151; }
+    h2 { font-size: 3.0rem; font-weight: 600; }
+    .model-label { font-size: 1.5rem; font-weight: 500; }
+    .total-value { font-size: 2.5rem; line-height: 1.05; font-weight: 700; }
+  </style>
+</head>
+<body class="bg-gray-50 p-6 font-sans">
+  <div class="max-w-5xl mx-auto bg-white rounded-3xl shadow-2xl p-8">
+    <div class="text-center mb-12">
+      <h1 id="pageTitle" class="main-title font-bold text-emerald-950 flex items-center justify-center gap-4">
+        ☀️ PV Forecast
+      </h1>
+      <div id="dateLine" class="date-line mt-2"></div>
+    </div>
+
+    <div id="loading" class="text-center py-12 text-2xl text-gray-600">Loading 4 calls (Met Office + ICON-D2 for Front and Back)…</div>
+
+    <div id="results" class="hidden">
+      <!-- Today -->
+      <div class="mb-16">
+        <h2 class="text-2xl font-semibold mb-6 text-black">Today</h2>
+        <div class="bg-emerald-50 p-8 rounded-3xl text-center border border-emerald-200 mx-auto max-w-xs">
+          <p class="text-2xl font-medium text-emerald-700">Total</p>
+          <p id="todayTotal" class="total-value text-emerald-900 mt-2">— <span class="text-2xl font-medium">kWh</span></p>
+        </div>
+        <canvas id="todayChart" height="240" class="mt-12"></canvas>
+      </div>
+
+      <!-- Tomorrow -->
+      <div>
+        <h2 class="text-2xl font-semibold mb-6 text-black">Tomorrow</h2>
+        <div class="bg-emerald-50 p-8 rounded-3xl text-center border border-emerald-200 mx-auto max-w-xs">
+          <p class="text-2xl font-medium text-emerald-700">Total</p>
+          <p id="tomTotal" class="total-value text-emerald-900 mt-2">— <span class="text-2xl font-medium">kWh</span></p>
+        </div>
+        <canvas id="tomChart" height="240" class="mt-12"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ================== EDIT THESE CONSTANTS ==================
+    const LAT = 52.9;
+    const LON = -1.29;
+
+    // Front array (tilt 26°, azimuth 44°)
+    const KWP_FRONT = 4.7;
+    const TILT_FRONT = 26;
+    const AZ_FRONT = 44;
+
+    // Back array (tilt 26°, azimuth -136°)
+    const KWP_BACK = 4.7;
+    const TILT_BACK = 26;
+    const AZ_BACK = -136;
+
+    const TEMP_COEFF = -0.35;   // % per °C
+    // =========================================================
+
+    let todayChartInst = null, tomChartInst = null;
+
+    function updateTitle() {
+      const now = new Date();
+      const options = { day: 'numeric', month: 'short' };
+      const dateStr = now.toLocaleDateString('en-GB', options);
+      document.getElementById('dateLine').textContent = dateStr;
+    }
+
+    async function loadForecast() {
+      const baseParams = `latitude=${LAT}&longitude=${LON}&hourly=global_tilted_irradiance,temperature_2m&timezone=auto&past_hours=12&forecast_hours=48`;
+
+      let times = [], temp = [];
+      let gti_met_front = [], gti_icon_front = [];
+      let gti_met_back = [], gti_icon_back = [];
+
+      try {
+        // 1. Front - Met Office
+        document.getElementById('loading').textContent = "Loading Front Met Office…";
+        let res = await fetch(`https://api.open-meteo.com/v1/forecast?${baseParams}&tilt=${TILT_FRONT}&azimuth=${AZ_FRONT}&models=ukmo_uk_deterministic_2km`);
+        let data = await res.json();
+        times = data.hourly.time;
+        temp = data.hourly.temperature_2m || [];
+        gti_met_front = data.hourly.global_tilted_irradiance || [];
+
+        await new Promise(r => setTimeout(r, 1000));
+
+        // 2. Front - ICON-D2
+        document.getElementById('loading').textContent = "Loading Front ICON-D2…";
+        res = await fetch(`https://api.open-meteo.com/v1/forecast?${baseParams}&tilt=${TILT_FRONT}&azimuth=${AZ_FRONT}&models=icon_d2`);
+        data = await res.json();
+        gti_icon_front = data.hourly.global_tilted_irradiance || [];
+
+        await new Promise(r => setTimeout(r, 1000));
+
+        // 3. Back - Met Office
+        document.getElementById('loading').textContent = "Loading Back Met Office…";
+        res = await fetch(`https://api.open-meteo.com/v1/forecast?${baseParams}&tilt=${TILT_BACK}&azimuth=${AZ_BACK}&models=ukmo_uk_deterministic_2km`);
+        data = await res.json();
+        gti_met_back = data.hourly.global_tilted_irradiance || [];
+
+        await new Promise(r => setTimeout(r, 1000));
+
+        // 4. Back - ICON-D2
+        document.getElementById('loading').textContent = "Loading Back ICON-D2…";
+        res = await fetch(`https://api.open-meteo.com/v1/forecast?${baseParams}&tilt=${TILT_BACK}&azimuth=${AZ_BACK}&models=icon_d2`);
+        data = await res.json();
+        gti_icon_back = data.hourly.global_tilted_irradiance || [];
+
+        const now = new Date();
+        const todayStr = now.toISOString().slice(0,10);
+        const tomorrowStr = new Date(now.getTime() + 86400000).toISOString().slice(0,10);
+
+        let todayLabels = [], todayFront = [], todayBack = [];
+        let tomLabels = [], tomFront = [], tomBack = [];
+        let todayYieldFront = 0, todayYieldBack = 0;
+        let tomYieldFront = 0, tomYieldBack = 0;
+
+        for (let i = 0; i < times.length; i++) {
+          const hourDate = times[i].slice(0,10);
+          const hourTime = new Date(times[i]);
+
+          const valMetFront = gti_met_front[i] != null ? gti_met_front[i] : 0;
+          const valIconFront = gti_icon_front[i] != null ? gti_icon_front[i] : 0;
+          const valMetBack = gti_met_back[i] != null ? gti_met_back[i] : 0;
+          const valIconBack = gti_icon_back[i] != null ? gti_icon_back[i] : 0;
+
+          const powerFront = Math.max(0, ((valMetFront + valIconFront) / 2 / 1000) * KWP_FRONT * (1 + TEMP_COEFF / 100 * ((temp[i] || 15) - 25)));
+          const powerBack = Math.max(0, ((valMetBack + valIconBack) / 2 / 1000) * KWP_BACK * (1 + TEMP_COEFF / 100 * ((temp[i] || 15) - 25)));
+
+          const hourStr = hourTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+          if (hourDate === todayStr) {
+            todayYieldFront += powerFront;
+            todayYieldBack += powerBack;
+            if (i < 60) {
+              todayLabels.push(hourStr);
+              todayFront.push(powerFront.toFixed(2));
+              todayBack.push(powerBack.toFixed(2));
+            }
+          }
+
+          if (hourDate === tomorrowStr) {
+            tomYieldFront += powerFront;
+            tomYieldBack += powerBack;
+            tomLabels.push(hourStr);
+            tomFront.push(powerFront.toFixed(2));
+            tomBack.push(powerBack.toFixed(2));
+          }
+        }
+
+        const totalToday = todayYieldFront + todayYieldBack;
+        const totalTom = tomYieldFront + todayYieldBack;
+
+        document.getElementById('todayTotal').innerHTML = totalToday.toFixed(1) + ' <span class="text-2xl font-medium">kWh</span>';
+        document.getElementById('tomTotal').innerHTML = totalTom.toFixed(1) + ' <span class="text-2xl font-medium">kWh</span>';
+
+        // Today Chart – two stacked areas (Front + Back) with lighter transparency
+        if (todayChartInst) todayChartInst.destroy();
+        todayChartInst = new Chart(document.getElementById('todayChart'), {
+          type: 'line',
+          data: {
+            labels: todayLabels,
+            datasets: [
+              { 
+                label: 'Front', 
+                data: todayFront, 
+                borderColor: '#10b981', 
+                backgroundColor: 'rgba(16, 185, 129, 0.35)', 
+                borderWidth: 4, 
+                tension: 0.3, 
+                fill: true 
+              },
+              { 
+                label: 'Back', 
+                data: todayBack, 
+                borderColor: '#2563eb', 
+                backgroundColor: 'rgba(37, 99, 235, 0.35)', 
+                borderWidth: 4, 
+                tension: 0.3, 
+                fill: true 
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            plugins: {
+              legend: {
+                labels: {
+                  font: { size: 20 }   // Larger legend font
+                }
+              }
+            },
+            scales: {
+              y: {
+                beginAtZero: true,
+                stacked: true,
+                ticks: { font: { size: 20 } }   // Larger y-axis font
+              },
+              x: {
+                ticks: { font: { size: 20 } }   // Larger x-axis font
+              }
+            }
+          }
+        });
+
+        // Tomorrow Chart – two stacked areas (Front + Back) with lighter transparency
+        if (tomChartInst) tomChartInst.destroy();
+        tomChartInst = new Chart(document.getElementById('tomChart'), {
+          type: 'line',
+          data: {
+            labels: tomLabels,
+            datasets: [
+              { 
+                label: 'Front', 
+                data: tomFront, 
+                borderColor: '#10b981', 
+                backgroundColor: 'rgba(16, 185, 129, 0.35)', 
+                borderWidth: 4, 
+                tension: 0.3, 
+                fill: true 
+              },
+              { 
+                label: 'Back', 
+                data: tomBack, 
+                borderColor: '#2563eb', 
+                backgroundColor: 'rgba(37, 99, 235, 0.35)', 
+                borderWidth: 4, 
+                tension: 0.3, 
+                fill: true 
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            plugins: {
+              legend: {
+                labels: {
+                  font: { size: 20 }   // Larger legend font
+                }
+              }
+            },
+            scales: {
+              y: {
+                beginAtZero: true,
+                stacked: true,
+                ticks: { font: { size: 20 } }   // Larger y-axis font
+              },
+              x: {
+                ticks: { font: { size: 20 } }   // Larger x-axis font
+              }
+            }
+          }
+        });
+
+        document.getElementById('loading').classList.add('hidden');
+        document.getElementById('results').classList.remove('hidden');
+      } catch (e) {
+        document.getElementById('loading').innerHTML = `Error: ${e.message}<br><small>Refresh page</small>`;
+      }
+    }
+
+    window.addEventListener('load', () => {
+      updateTitle();
+      loadForecast();
+    });
+  </script>
+  <a href="https://open-meteo.com/" target="_blank" rel="noopener">
+  Weather data by Open-Meteo.com
+</a>
+</body>
+</html>
