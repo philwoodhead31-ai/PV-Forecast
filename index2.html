@@ -120,8 +120,8 @@
         const todayStr = now.toISOString().slice(0,10);
         const tomorrowStr = new Date(now.getTime() + 86400000).toISOString().slice(0,10);
 
-        let todayLabels = [], todayFront = [], todayBack = [];
-        let tomLabels = [], tomFront = [], tomBack = [];
+        let todayLabels = [], todayPower = [];
+        let tomLabels = [], tomPower = [];
         let todayYieldFront = 0, todayYieldBack = 0;
         let tomYieldFront = 0, tomYieldBack = 0;
 
@@ -137,6 +137,7 @@
           const powerFront = Math.max(0, ((valMetFront + valIconFront) / 2 / 1000) * KWP_FRONT * (1 + TEMP_COEFF / 100 * ((temp[i] || 15) - 25)));
           const powerBack = Math.max(0, ((valMetBack + valIconBack) / 2 / 1000) * KWP_BACK * (1 + TEMP_COEFF / 100 * ((temp[i] || 15) - 25)));
 
+          const totalPower = powerFront + powerBack;
           const hourStr = hourTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
           if (hourDate === todayStr) {
@@ -144,8 +145,7 @@
             todayYieldBack += powerBack;
             if (i < 60) {
               todayLabels.push(hourStr);
-              todayFront.push(powerFront.toFixed(2));
-              todayBack.push(powerBack.toFixed(2));
+              todayPower.push(totalPower.toFixed(2));
             }
           }
 
@@ -153,18 +153,17 @@
             tomYieldFront += powerFront;
             tomYieldBack += powerBack;
             tomLabels.push(hourStr);
-            tomFront.push(powerFront.toFixed(2));
-            tomBack.push(powerBack.toFixed(2));
+            tomPower.push(totalPower.toFixed(2));
           }
         }
 
         const totalToday = todayYieldFront + todayYieldBack;
-        const totalTom = tomYieldFront + todayYieldBack;
+        const totalTom = tomYieldFront + tomYieldBack;
 
         document.getElementById('todayTotal').innerHTML = totalToday.toFixed(1) + ' <span class="text-2xl font-medium">kWh</span>';
         document.getElementById('tomTotal').innerHTML = totalTom.toFixed(1) + ' <span class="text-2xl font-medium">kWh</span>';
 
-        // Today Chart – two stacked areas (Front + Back) with lighter transparency
+        // Today Chart – single combined line (Front + Back)
         if (todayChartInst) todayChartInst.destroy();
         todayChartInst = new Chart(document.getElementById('todayChart'), {
           type: 'line',
@@ -172,22 +171,11 @@
             labels: todayLabels,
             datasets: [
               { 
-                label: 'Front', 
-                data: todayFront, 
+                label: 'Total', 
+                data: todayPower, 
                 borderColor: '#10b981', 
-                backgroundColor: 'rgba(16, 185, 129, 0.35)', 
                 borderWidth: 4, 
-                tension: 0.3, 
-                fill: true 
-              },
-              { 
-                label: 'Back', 
-                data: todayBack, 
-                borderColor: '#2563eb', 
-                backgroundColor: 'rgba(37, 99, 235, 0.35)', 
-                borderWidth: 4, 
-                tension: 0.3, 
-                fill: true 
+                tension: 0.3 
               }
             ]
           },
@@ -195,25 +183,22 @@
             responsive: true,
             plugins: {
               legend: {
-                labels: {
-                  font: { size: 20 }   // Larger legend font
-                }
+                display: false
               }
             },
             scales: {
               y: {
                 beginAtZero: true,
-                stacked: true,
-                ticks: { font: { size: 20 } }   // Larger y-axis font
+                ticks: { font: { size: 20 } }
               },
               x: {
-                ticks: { font: { size: 20 } }   // Larger x-axis font
+                ticks: { font: { size: 20 } }
               }
             }
           }
         });
 
-        // Tomorrow Chart – two stacked areas (Front + Back) with lighter transparency
+        // Tomorrow Chart – single combined line (Front + Back)
         if (tomChartInst) tomChartInst.destroy();
         tomChartInst = new Chart(document.getElementById('tomChart'), {
           type: 'line',
@@ -221,22 +206,11 @@
             labels: tomLabels,
             datasets: [
               { 
-                label: 'Front', 
-                data: tomFront, 
+                label: 'Total', 
+                data: tomPower, 
                 borderColor: '#10b981', 
-                backgroundColor: 'rgba(16, 185, 129, 0.35)', 
                 borderWidth: 4, 
-                tension: 0.3, 
-                fill: true 
-              },
-              { 
-                label: 'Back', 
-                data: tomBack, 
-                borderColor: '#2563eb', 
-                backgroundColor: 'rgba(37, 99, 235, 0.35)', 
-                borderWidth: 4, 
-                tension: 0.3, 
-                fill: true 
+                tension: 0.3 
               }
             ]
           },
@@ -244,19 +218,16 @@
             responsive: true,
             plugins: {
               legend: {
-                labels: {
-                  font: { size: 20 }   // Larger legend font
-                }
+                display: false
               }
             },
             scales: {
               y: {
                 beginAtZero: true,
-                stacked: true,
-                ticks: { font: { size: 20 } }   // Larger y-axis font
+                ticks: { font: { size: 20 } }
               },
               x: {
-                ticks: { font: { size: 20 } }   // Larger x-axis font
+                ticks: { font: { size: 20 } }
               }
             }
           }
